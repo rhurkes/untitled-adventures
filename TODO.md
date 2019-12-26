@@ -1,0 +1,8 @@
+- dig into the dyn keyword that highlights Console is a trait on the Object.draw function
+- check into the handle_keys update from part 2 if we can just pass a map, or need the whole game
+- part 2, objects should be a vec and not an array
+- part 2 bonus at end:
+    - create map as continuous vec
+    - treat everything in map as another object
+- render_all: should use game obj for dimensions instead of consts
+- how would I patch out all the unsafe usage in things like lib.rs for libtcod?
