@@ -1,6 +1,6 @@
 - dig into the dyn keyword that highlights Console is a trait on the Object.draw function
 - check into the handle_keys update from part 2 if we can just pass a map, or need the whole game
-- part 2, objects should be a vec and not an array
+- part 2, objects should be a vec and not an array: this is fixed in part 5
 - part 2 bonus at end:
     - create map as continuous vec
     - treat everything in map as another object
@@ -10,3 +10,7 @@
 - all these places where we're downcasting to usize, would it be easier just to use usize?
 - look into why you need to dereference a mutable reference to get/set (see: *explored)
 - "One might argue that that render_all should not actually modify anything and that the FOV/exploration code belongs somewhere else. They wouldn’t necessarily be wrong. But let’s just roll with it for now."
+- I love the name: name.into() thing that converts &str to String
+- domain::is_blocked is gross, where to put this?
+- place_objects won't place any monsters if it doesn't find an empty tile - should keep checking open spots
+- let alive be set in new constructor for objects
