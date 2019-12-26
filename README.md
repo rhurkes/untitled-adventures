@@ -16,3 +16,4 @@ Untitled Adventures
 
 # resources
 - Roguelike Tutorial in Rust + tcod: https://tomassedovic.github.io/roguelike-tutorial/
+- Field of View discussion: http://www.roguebasin.com/index.php?title=Comparative_study_of_field_of_view_algorithms_for_2D_grid_based_worlds

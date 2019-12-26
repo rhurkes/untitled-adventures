@@ -7,3 +7,6 @@
 - render_all: should use game obj for dimensions instead of consts
 - how would I patch out all the unsafe usage in things like lib.rs for libtcod?
 - should Rect from part 3 actually be called a Room?
+- all these places where we're downcasting to usize, would it be easier just to use usize?
+- look into why you need to dereference a mutable reference to get/set (see: *explored)
+- "One might argue that that render_all should not actually modify anything and that the FOV/exploration code belongs somewhere else. They wouldn’t necessarily be wrong. But let’s just roll with it for now."
