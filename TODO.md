@@ -6,3 +6,4 @@
     - treat everything in map as another object
 - render_all: should use game obj for dimensions instead of consts
 - how would I patch out all the unsafe usage in things like lib.rs for libtcod?
+- should Rect from part 3 actually be called a Room?
