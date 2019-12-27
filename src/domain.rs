@@ -1,8 +1,8 @@
-use tcod::colors::Color;
+use tcod::colors::{Color, DARK_RED};
 use tcod::console::{BackgroundFlag, Console};
 
 /// A tile of the map and its properties
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Tile {
     pub blocked: bool,
     pub block_sight: bool,
@@ -34,7 +34,7 @@ pub struct Game {
 
 /// This is a generic object: the player, a monster, an item, the stairs...
 /// It's always represented by a character on screen.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Object {
     pub x: i32,
     pub y: i32,
@@ -43,6 +43,8 @@ pub struct Object {
     pub color: Color,
     pub blocks: bool,
     pub alive: bool,
+    pub fighter: Option<Fighter>,
+    pub ai: Option<Ai>,
 }
 
 impl Object {
@@ -55,7 +57,35 @@ impl Object {
             name: name.into(),
             blocks,
             alive: false, // default things to being non-alive
+            fighter: None,
+            ai: None,
         }
+    }
+
+    pub fn attack(&mut self, target: &mut Object) {
+        // a simple formula for attack damage
+        let damage = self.fighter.map_or(0, |f| f.power) - target.fighter.map_or(0, |f| f.defense);
+
+        if damage > 0 {
+            // make the target take some damage
+            println!(
+                "{} attacks {} for {} hit points.",
+                self.name, target.name, damage
+            );
+            target.take_damage(damage);
+        } else {
+            println!(
+                "{} attacks {} but it has no effect!",
+                self.name, target.name
+            );
+        }
+    }
+
+    /// return the distance to another object
+    pub fn distance_to(&self, other: &Object) -> f32 {
+        let dx = other.x - self.x;
+        let dy = other.y - self.y;
+        ((dx.pow(2) + dy.pow(2)) as f32).sqrt()
     }
 
     /// set the color and then draw the character that represents this object at its position
@@ -71,6 +101,23 @@ impl Object {
     pub fn set_pos(&mut self, x: i32, y: i32) {
         self.x = x;
         self.y = y;
+    }
+
+    fn take_damage(&mut self, damage: i32) {
+        // apply damage if possible
+        if let Some(fighter) = self.fighter.as_mut() {
+            if damage > 0 {
+                fighter.hp -= damage;
+            }
+        }
+
+        // check for death and call the death function if needed
+        if let Some(fighter) = self.fighter {
+            if fighter.hp <= 0 {
+                self.alive = false;
+                fighter.on_death.callback(self);
+            }
+        }
     }
 }
 
@@ -128,9 +175,73 @@ impl Rect {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum PlayerAction {
     TookTurn,
     DidntTakeTurn,
     Exit,
+}
+
+// combat-related properties and methods (monster, player, NPC)
+#[derive(Clone, Copy, Debug)]
+pub struct Fighter {
+    pub max_hp: i32,
+    pub hp: i32,
+    pub defense: i32,
+    pub power: i32,
+    on_death: DeathCallback,
+}
+
+impl Fighter {
+    pub fn new(defense: i32, hp: i32, max_hp: i32, power: i32, on_death: DeathCallback) -> Self {
+        Fighter {
+            defense,
+            hp,
+            max_hp,
+            power,
+            on_death,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum DeathCallback {
+    Player,
+    Monster,
+}
+
+impl DeathCallback {
+    fn callback(self, object: &mut Object) {
+        use DeathCallback::*;
+        let callback: fn(&mut Object) = match self {
+            Player => player_death,
+            Monster => monster_death,
+        };
+        callback(object);
+    }
+}
+
+fn player_death(player: &mut Object) {
+    // the game ended
+    println!("You died!");
+
+    // for added effect, transform the player into a corpse
+    player.char = '%';
+    player.color = DARK_RED;
+}
+
+fn monster_death(monster: &mut Object) {
+    // transform it into a corpse
+    println!("{} is dead!", monster.name);
+    monster.char = '%';
+    monster.color = DARK_RED;
+    monster.blocks = false;
+    monster.fighter = None;
+    monster.ai = None;
+    monster.name = format!("remains of {}", monster.name);
+}
+
+#[derive(Clone, Debug)]
+pub enum Ai {
+    Basic,
 }

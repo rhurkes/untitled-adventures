@@ -1,6 +1,6 @@
 - dig into the dyn keyword that highlights Console is a trait on the Object.draw function
 - check into the handle_keys update from part 2 if we can just pass a map, or need the whole game
-- part 2, objects should be a vec and not an array: this is fixed in part 5
+- part 2, objects should be a vec and not an array: this is fixed in part 5. Edit: only some of it is fixed, still review
 - part 2 bonus at end:
     - create map as continuous vec
     - treat everything in map as another object
@@ -14,3 +14,9 @@
 - domain::is_blocked is gross, where to put this?
 - place_objects won't place any monsters if it doesn't find an empty tile - should keep checking open spots
 - let alive be set in new constructor for objects
+- TODO: dig into composition vs. inheritance and how this isn’t a real ECS whatever that means…​
+- read constants from a config file
+- all these void functions should have rust doc to describe what they're operating on and why
+- remove magic numbers like the 2.0 in ai_take_turn
+- this mut_two thing from part 6 is gross and should be replaced
+- to_draw.sort_by: what is `cmp`? what is a `&&` reference?

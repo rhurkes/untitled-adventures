@@ -1,10 +1,12 @@
+#![allow(clippy::ptr_arg)]
+
 mod domain;
 
-use domain::{Game, Map, Object, PlayerAction, Rect, Tile};
+use domain::{Ai, DeathCallback, Fighter, Game, Map, Object, PlayerAction, Rect, Tile};
 use rand::Rng;
 use std::cmp;
 use tcod::colors::*;
-use tcod::console::*;   
+use tcod::console::*;
 use tcod::map::{FovAlgorithm, Map as FovMap};
 
 // actual size of the window
@@ -83,6 +85,7 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
             create_room(new_room, &mut map);
 
             // add some objects to this room, such as monsters
+            // TODO: COPY
             place_objects(new_room, &map, objects);
 
             // center coordinates of the new room, will be useful later
@@ -110,6 +113,7 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
             }
 
             // append the new room to the list
+            // TODO: COPY
             rooms.push(new_room);
         }
     }
@@ -138,6 +142,51 @@ fn create_vertical_tunnel(y1: i32, y2: i32, x: i32, map: &mut Map) {
     }
 }
 
+fn move_towards(id: usize, target_x: i32, target_y: i32, map: &Map, objects: &mut [Object]) {
+    // vector from this object to the target, and distance
+    let dx = target_x - objects[id].x;
+    let dy = target_y - objects[id].y;
+    let distance = ((dx.pow(2) + dy.pow(2)) as f32).sqrt();
+
+    // normalize it to length 1 (preserving direction), then round it and convert to integer
+    // so the movement is restricted to the map grid
+    let dx = (dx as f32 / distance).round() as i32;
+    let dy = (dy as f32 / distance).round() as i32;
+    domain::move_by(id, dx, dy, map, objects);
+}
+
+fn ai_take_turn(monster_id: usize, tcod: &Tcod, game: &Game, objects: &mut [Object]) {
+    // a basic monster takes its turn - if you can see it, it can see you
+    let (monster_x, monster_y) = objects[monster_id].pos();
+
+    if tcod.fov.is_in_fov(monster_x, monster_y) {
+        if objects[monster_id].distance_to(&objects[PLAYER]) >= 2.0 {
+            // move towards player if too far away
+            let (player_x, player_y) = objects[PLAYER].pos();
+            move_towards(monster_id, player_x, player_y, &game.map, objects);
+        } else if objects[PLAYER].fighter.map_or(false, |f| f.hp > 0) {
+            // close enough, player is still slive - attack
+            let (monster, player) = mut_two(monster_id, PLAYER, objects);
+            monster.attack(player);
+        }
+    }
+}
+
+/// Mutably borrow two *separate* elements from the given slice.
+/// Panics when the indexes are equal or out of bounds.
+fn mut_two<T>(first_index: usize, second_index: usize, items: &mut [T]) -> (&mut T, &mut T) {
+    assert_ne!(first_index, second_index);
+
+    let split_at_index = cmp::max(first_index, second_index);
+    let (first_slice, second_slice) = items.split_at_mut(split_at_index);
+
+    if first_index < second_index {
+        (&mut first_slice[first_index], &mut second_slice[0])
+    } else {
+        (&mut second_slice[0], &mut first_slice[second_index])
+    }
+}
+
 fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
     // choose random number of monsters
     let num_monsters = rand::thread_rng().gen_range(0, MAX_ROOM_MONSTERS + 1);
@@ -150,10 +199,15 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
         // only place it if tile is not blocked
         if !domain::is_blocked(x, y, map, objects) {
             let mut monster = if rand::random::<f32>() < 0.8 {
-                // 80% chance of getting an orc
-                Object::new(x, y, 'o', "orc", DESATURATED_GREEN, true)
+                let mut orc = Object::new(x, y, 'o', "orc", DESATURATED_GREEN, true);
+                orc.fighter = Some(Fighter::new(0, 10, 10, 3, DeathCallback::Monster));
+                orc.ai = Some(Ai::Basic);
+                orc
             } else {
-                Object::new(x, y, 'T', "troll", DARKER_GREEN, true)
+                let mut troll = Object::new(x, y, 'T', "troll", DARKER_GREEN, true);
+                troll.fighter = Some(Fighter::new(1, 16, 16, 4, DeathCallback::Monster));
+                troll.ai = Some(Ai::Basic);
+                troll
             };
 
             monster.alive = true;
@@ -198,11 +252,31 @@ fn render_all(tcod: &mut Tcod, game: &mut Game, objects: &[Object], should_compu
         }
     }
 
+    let mut to_draw: Vec<_> = objects
+        .iter()
+        .filter(|o| tcod.fov.is_in_fov(o.x, o.y))
+        .collect();
+
+    // sort so that non-blocking objects are drawn first
+    to_draw.sort_by(|o1, o2| o1.blocks.cmp(&o2.blocks));
+
     // draw all objects in the list
-    for object in objects {
+    for object in &to_draw {
         if tcod.fov.is_in_fov(object.x, object.y) {
             object.draw(&mut tcod.con);
         }
+    }
+
+    // show the player's stats
+    tcod.root.set_default_foreground(WHITE);
+    if let Some(fighter) = objects[PLAYER].fighter {
+        tcod.root.print_ex(
+            1,
+            SCREEN_HEIGHT - 2,
+            BackgroundFlag::None,
+            TextAlignment::Left,
+            format!("HP: {}/{} ", fighter.hp, fighter.max_hp),
+        );
     }
 
     blit(
@@ -222,15 +296,15 @@ fn player_move_or_attack(dx: i32, dy: i32, game: &Game, objects: &mut [Object]) 
     let y = objects[PLAYER].y + dy;
 
     // try to find an attackable object there
-    let target_id = objects.iter().position(|object| object.pos() == (x, y));
+    let target_id = objects
+        .iter()
+        .position(|object| object.fighter.is_some() && object.pos() == (x, y));
 
     // attack if target found, move otherwise
     match target_id {
         Some(target_id) => {
-            println!(
-                "The {} laughs at your puny efforts to attack him!",
-                objects[target_id].name
-            );
+            let (player, target) = mut_two(PLAYER, target_id, objects);
+            player.attack(target);
         }
         None => domain::move_by(PLAYER, dx, dy, &game.map, objects),
     }
@@ -242,8 +316,8 @@ fn handle_keys(tcod: &mut Tcod, game: &Game, objects: &mut Vec<Object>) -> Playe
     use PlayerAction::*;
 
     let key = tcod.root.wait_for_keypress(true);
-    let player_alive = objects[PLAYER].alive;
-    match (key, key.text(), player_alive) {
+
+    match (key, key.text(), objects[PLAYER].alive) {
         (
             Key {
                 code: Enter,
@@ -301,6 +375,7 @@ fn main() {
     // create object representing the player
     let mut player = Object::new(0, 0, '@', "player", WHITE, true);
     player.alive = true;
+    player.fighter = Some(Fighter::new(2, 30, 30, 5, DeathCallback::Player));
 
     // the list of objects with those two
     let mut objects = vec![player];
@@ -347,11 +422,9 @@ fn main() {
 
         // let monsters take their turn
         if objects[PLAYER].alive && player_action != PlayerAction::DidntTakeTurn {
-            for object in &objects {
-                // only if object is not player - use pointer comparison since we don't have Object
-                // eq checks yet
-                if (object as *const _) != (&objects[PLAYER] as *const _) {
-                    println!("The {} growls!", object.name);
+            for id in 0..objects.len() {
+                if objects[id].ai.is_some() {
+                    ai_take_turn(id, &tcod, &game, &mut objects);
                 }
             }
         }
