@@ -20,3 +20,8 @@
 - remove magic numbers like the 2.0 in ai_take_turn
 - this mut_two thing from part 6 is gross and should be replaced
 - to_draw.sort_by: what is `cmp`? what is a `&&` reference?
+- rename consoles in tcod struct, `cons` is a bad name
+- deal with too many args in clippy
+- deal with Map alias and clippy warn
+- deal with use *
+- TODO dig into turbofish with placeholder generic collect::<Vec<_>>()

@@ -1,4 +1,4 @@
-use tcod::colors::{Color, DARK_RED};
+use tcod::colors::*;
 use tcod::console::{BackgroundFlag, Console};
 
 /// A tile of the map and its properties
@@ -30,6 +30,7 @@ pub type Map = Vec<Vec<Tile>>;
 
 pub struct Game {
     pub map: Map,
+    pub messages: Messages,
 }
 
 /// This is a generic object: the player, a monster, an item, the stairs...
@@ -62,23 +63,24 @@ impl Object {
         }
     }
 
-    pub fn attack(&mut self, target: &mut Object) {
+    pub fn attack(&mut self, target: &mut Object, game: &mut Game) {
         // a simple formula for attack damage
         let damage = self.fighter.map_or(0, |f| f.power) - target.fighter.map_or(0, |f| f.defense);
 
-        if damage > 0 {
-            // make the target take some damage
-            println!(
+        let message = if damage > 0 {
+            target.take_damage(damage, game);
+            format!(
                 "{} attacks {} for {} hit points.",
                 self.name, target.name, damage
-            );
-            target.take_damage(damage);
+            )
         } else {
-            println!(
+            format!(
                 "{} attacks {} but it has no effect!",
                 self.name, target.name
-            );
-        }
+            )
+        };
+
+        game.messages.add(message, WHITE);
     }
 
     /// return the distance to another object
@@ -103,7 +105,7 @@ impl Object {
         self.y = y;
     }
 
-    fn take_damage(&mut self, damage: i32) {
+    fn take_damage(&mut self, damage: i32, game: &mut Game) {
         // apply damage if possible
         if let Some(fighter) = self.fighter.as_mut() {
             if damage > 0 {
@@ -115,7 +117,7 @@ impl Object {
         if let Some(fighter) = self.fighter {
             if fighter.hp <= 0 {
                 self.alive = false;
-                fighter.on_death.callback(self);
+                fighter.on_death.callback(self, game);
             }
         }
     }
@@ -211,28 +213,29 @@ pub enum DeathCallback {
 }
 
 impl DeathCallback {
-    fn callback(self, object: &mut Object) {
+    fn callback(self, object: &mut Object, game: &mut Game) {
         use DeathCallback::*;
-        let callback: fn(&mut Object) = match self {
+        let callback = match self {
             Player => player_death,
             Monster => monster_death,
         };
-        callback(object);
+        callback(object, game);
     }
 }
 
-fn player_death(player: &mut Object) {
+fn player_death(player: &mut Object, game: &mut Game) {
     // the game ended
-    println!("You died!");
+    game.messages.add("You died!", RED);
 
     // for added effect, transform the player into a corpse
     player.char = '%';
     player.color = DARK_RED;
 }
 
-fn monster_death(monster: &mut Object) {
+fn monster_death(monster: &mut Object, game: &mut Game) {
     // transform it into a corpse
-    println!("{} is dead!", monster.name);
+    game.messages
+        .add(format!("{} is dead!", monster.name), ORANGE);
     monster.char = '%';
     monster.color = DARK_RED;
     monster.blocks = false;
@@ -244,4 +247,24 @@ fn monster_death(monster: &mut Object) {
 #[derive(Clone, Debug)]
 pub enum Ai {
     Basic,
+}
+
+pub struct Messages {
+    pub messages: Vec<(String, Color)>,
+}
+
+impl Messages {
+    pub fn new() -> Self {
+        Self { messages: vec![] }
+    }
+
+    /// add the new message as a tuple with the text and the color
+    pub fn add<T: Into<String>>(&mut self, message: T, color: Color) {
+        self.messages.push((message.into(), color));
+    }
+
+    /// create a double-ended iterator over the messages
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &(String, Color)> {
+        self.messages.iter()
+    }
 }
