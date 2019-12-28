@@ -1,9 +1,11 @@
 #![allow(clippy::ptr_arg)]
 
 mod domain;
+mod menu;
 
-use crate::domain::Messages;
-use domain::{Ai, DeathCallback, Fighter, Game, Map, Object, PlayerAction, Rect, Tile};
+use crate::domain::{is_blocked, Messages, UseResult};
+use crate::menu::inventory_menu;
+use domain::{Ai, DeathCallback, Fighter, Game, Item, Map, Object, PlayerAction, Rect, Tile};
 use rand::Rng;
 use std::cmp;
 use tcod::colors::*;
@@ -58,6 +60,10 @@ const MSG_X: i32 = BAR_WIDTH + 2;
 const MSG_WIDTH: i32 = SCREEN_WIDTH - BAR_WIDTH - 2;
 const MSG_HEIGHT: usize = PANEL_HEIGHT as usize - 1;
 
+const HEAL_AMOUNT: i32 = 4;
+const INVENTORY_WIDTH: i32 = 50;
+const MAX_INVENTORY: usize = 26; // tied to 26 letters in alphabet
+const MAX_ROOM_ITEMS: i32 = 3;
 const MAX_ROOM_MONSTERS: i32 = 3;
 const PLAYER: usize = 0; // player is always the first object
 
@@ -98,7 +104,6 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
             create_room(new_room, &mut map);
 
             // add some objects to this room, such as monsters
-            // TODO: COPY
             place_objects(new_room, &map, objects);
 
             // center coordinates of the new room, will be useful later
@@ -225,6 +230,23 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
 
             monster.alive = true;
             objects.push(monster);
+        }
+    }
+
+    // choose random number of items
+    let num_items = rand::thread_rng().gen_range(0, MAX_ROOM_ITEMS + 1);
+
+    for _ in 0..num_items {
+        // choose random spot for this item
+        let x = rand::thread_rng().gen_range(room.x1 + 1, room.x2);
+        let y = rand::thread_rng().gen_range(room.y1 + 1, room.y2);
+
+        // only place it if the the tile is not blocked
+        if !is_blocked(x, y, map, objects) {
+            // create a healing potion
+            let mut object = Object::new(x, y, '!', "healing potion", VIOLET, false);
+            object.item = Some(Item::Heal);
+            objects.push(object);
         }
     }
 }
@@ -378,6 +400,24 @@ fn get_names_under_mouse(mouse: Mouse, objects: &[Object], fov_map: &FovMap) -> 
     names.join(", ")
 }
 
+/// add to the player's inventory and remove from the map
+fn pick_item_up(object_id: usize, game: &mut Game, objects: &mut Vec<Object>) {
+    if game.inventory.len() >= MAX_INVENTORY {
+        game.messages.add(
+            format!(
+                "Your inventory is full, cannot pick up {}.",
+                objects[object_id].name
+            ),
+            RED,
+        );
+    } else {
+        let item = objects.swap_remove(object_id);
+        game.messages
+            .add(format!("You pick up a {}!", item.name), GREEN);
+        game.inventory.push(item);
+    }
+}
+
 fn handle_keys(tcod: &mut Tcod, game: &mut Game, objects: &mut Vec<Object>) -> PlayerAction {
     use tcod::input::KeyCode::*;
     use PlayerAction::*;
@@ -416,9 +456,75 @@ fn handle_keys(tcod: &mut Tcod, game: &mut Game, objects: &mut Vec<Object>) -> P
             player_move_or_attack(1, 0, game, objects);
             TookTurn
         }
-
+        (Key { code: Text, .. }, "g", true) => {
+            // pick up an item
+            let item_id = objects
+                .iter()
+                .position(|object| object.pos() == objects[PLAYER].pos() && object.item.is_some());
+            if let Some(item_id) = item_id {
+                pick_item_up(item_id, game, objects);
+            }
+            DidntTakeTurn
+        }
+        (Key { code: Text, .. }, "i", true) => {
+            // show the inventory
+            let inventory_index = inventory_menu(
+                &game.inventory,
+                "Press the key next to an item to use it, or any other key to cancel.\n",
+                &mut tcod.root,
+            );
+            if let Some(inventory_index) = inventory_index {
+                use_item(inventory_index, tcod, game, objects);
+            }
+            DidntTakeTurn
+        }
         _ => DidntTakeTurn,
     }
+}
+
+fn use_item(inventory_id: usize, tcod: &mut Tcod, game: &mut Game, objects: &mut [Object]) {
+    use Item::*;
+    // just call the use_function if it is defined
+    if let Some(item) = game.inventory[inventory_id].item {
+        let on_use = match item {
+            Heal => cast_heal,
+        };
+
+        match on_use(inventory_id, tcod, game, objects) {
+            UseResult::UsedUp => {
+                // destroy after use, unless it was cancelled for some reason
+                game.inventory.remove(inventory_id);
+            }
+            UseResult::Cancelled => {
+                game.messages.add("Cancelled", WHITE);
+            }
+        }
+    } else {
+        game.messages.add(
+            format!("The {} cannot be used.", game.inventory[inventory_id].name),
+            WHITE,
+        );
+    }
+}
+
+fn cast_heal(
+    _inventory_id: usize,
+    _tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &mut [Object],
+) -> UseResult {
+    if let Some(fighter) = objects[PLAYER].fighter {
+        if fighter.hp == fighter.max_hp {
+            game.messages.add("You are already at full health.", RED);
+            return UseResult::Cancelled;
+        }
+        game.messages
+            .add("Your wounds start to feel better!", LIGHT_VIOLET);
+        objects[PLAYER].heal(HEAL_AMOUNT);
+        return UseResult::UsedUp;
+    }
+
+    UseResult::Cancelled
 }
 
 fn render_bar(
@@ -480,13 +586,15 @@ fn main() {
     player.alive = true;
     player.fighter = Some(Fighter::new(2, 30, 30, 5, DeathCallback::Player));
 
-    // the list of objects with those two
+    // the list of objects
+    // ID for player will always be fixed at 0, but everything else can change
     let mut objects = vec![player];
 
     let mut game = Game {
         // generate map (at this point it's not drawn to the screen)
         map: make_map(&mut objects),
         messages: Messages::new(),
+        inventory: vec![],
     };
 
     // force FOV recompute first time through the game loop

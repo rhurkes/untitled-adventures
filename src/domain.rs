@@ -31,6 +31,7 @@ pub type Map = Vec<Vec<Tile>>;
 pub struct Game {
     pub map: Map,
     pub messages: Messages,
+    pub inventory: Vec<Object>,
 }
 
 /// This is a generic object: the player, a monster, an item, the stairs...
@@ -46,6 +47,7 @@ pub struct Object {
     pub alive: bool,
     pub fighter: Option<Fighter>,
     pub ai: Option<Ai>,
+    pub item: Option<Item>,
 }
 
 impl Object {
@@ -60,6 +62,7 @@ impl Object {
             alive: false, // default things to being non-alive
             fighter: None,
             ai: None,
+            item: None,
         }
     }
 
@@ -94,6 +97,16 @@ impl Object {
     pub fn draw(&self, con: &mut dyn Console) {
         con.set_default_foreground(self.color);
         con.put_char(self.x, self.y, self.char, BackgroundFlag::None);
+    }
+
+    /// heal by the given amount, without going over the maximum
+    pub(crate) fn heal(&mut self, amount: i32) {
+        if let Some(ref mut fighter) = self.fighter {
+            fighter.hp += amount;
+            if fighter.hp > fighter.max_hp {
+                fighter.hp = fighter.max_hp;
+            }
+        }
     }
 
     pub fn pos(&self) -> (i32, i32) {
@@ -267,4 +280,14 @@ impl Messages {
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &(String, Color)> {
         self.messages.iter()
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Item {
+    Heal,
+}
+
+pub enum UseResult {
+    UsedUp,
+    Cancelled,
 }

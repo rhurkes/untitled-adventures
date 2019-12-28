@@ -25,3 +25,7 @@
 - deal with Map alias and clippy warn
 - deal with use *
 - TODO dig into turbofish with placeholder generic collect::<Vec<_>>()
+- assess the part 8 section on how objects are stored/passed around
+- allow for more than 26 slots in inventory
+- move inventory onto player - this allows for monsters to carry loot that they can equip
+- TODO dig into what "Components" are
